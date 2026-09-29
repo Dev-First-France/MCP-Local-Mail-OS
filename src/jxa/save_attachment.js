@@ -1,7 +1,6 @@
 // Enregistre une pièce jointe à l'emplacement exact décidé (et déjà validé) côté Node.
 function main(input, Mail) {
-  const acc = getAccount(Mail, input);
-  const mb = getMailbox(acc, input.mailbox);
+  const mb = boxOf(Mail, input.account, input.mailbox);
   const msg = getMessage(mb, input.id);
   const names = orNull(function () { return msg.mailAttachments.name(); }) || [];
   let index = -1;

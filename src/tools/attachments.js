@@ -6,15 +6,15 @@ import { ErrorCode, MailMcpError } from '../errors.js';
 import { runJxa } from '../osascript.js';
 import { assertInside, ensureTargetDir, uniqueDestination, validateAttachmentName } from '../paths.js';
 import { handler } from '../result.js';
-import { mailboxArg, messageIdArg } from './shared.js';
+import { accountArg, mailboxArg, messageIdArg } from './shared.js';
 
-export async function saveAttachment({ id, mailbox, attachment_name, target_dir }) {
+export async function saveAttachment({ account, mailbox, id, attachment_name, target_dir }) {
   // Tous les contrôles de chemin ont lieu ici, avant le moindre appel à Mail.
   const name = validateAttachmentName(attachment_name);
   const dir = await ensureTargetDir(target_dir ?? config.defaultDownloadDir);
   const dest = await uniqueDestination(dir, name);
 
-  const res = await runJxa('save_attachment', { id, mailbox, attachment_name: name, dest_path: dest.path });
+  const res = await runJxa('save_attachment', { account, mailbox, id, attachment_name: name, dest_path: dest.path });
 
   let info;
   try {
@@ -45,8 +45,9 @@ export function registerAttachmentTools(server) {
         'Si un fichier du même nom existe, un suffixe -1, -2… est ajouté (rien n\'est écrasé). ' +
         'Le nom de la pièce jointe ne doit contenir ni "/" ni "..".',
       inputSchema: {
-        id: messageIdArg,
+        account: accountArg,
         mailbox: mailboxArg,
+        id: messageIdArg,
         attachment_name: z.string().min(1).describe('Nom exact de la pièce jointe, tel que renvoyé par read_message.'),
         target_dir: z
           .string()

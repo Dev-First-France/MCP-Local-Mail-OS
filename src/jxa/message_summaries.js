@@ -1,8 +1,6 @@
-// Détails de messages désignés par (mailbox, id).
+// Détails de messages désignés par (account, mailbox, id).
 // S'arrête avant le timeout et renvoie dans « remaining » ce qui reste à traiter.
 function main(input, Mail) {
-  const acc = getAccount(Mail, input);
-  const boxes = {};
   const out = [];
   const missing = [];
   const remaining = [];
@@ -11,12 +9,11 @@ function main(input, Mail) {
       remaining.push(item);
       return;
     }
-    if (!boxes[item.mailbox]) boxes[item.mailbox] = getMailbox(acc, item.mailbox);
-    const mb = boxes[item.mailbox];
+    const mb = boxOf(Mail, item.account, item.mailbox);
     try {
-      out.push(summaryOf(mb.ref.messages.byId(item.id), item.id, mb.path));
+      out.push(summaryOf(mb.ref.messages.byId(item.id), item.id, mb));
     } catch (e) {
-      missing.push({ id: item.id, mailbox: mb.path });
+      missing.push({ id: item.id, account: mb.account.name, mailbox: mb.path });
     }
   });
   return { messages: out, missing: missing, remaining: remaining };

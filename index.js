@@ -9,10 +9,11 @@ import { registerOrganizeTools } from './src/tools/organize.js';
 import { registerReadTools } from './src/tools/read.js';
 
 const server = new McpServer(
-  { name: 'mail-mcp', version: '0.1.0' },
+  { name: 'mail-mcp', version: '0.2.0' },
   {
     instructions:
-      'Pilote Apple Mail, compte iCloud uniquement. Un message est identifié par le couple (id, mailbox). ' +
+      'Pilote Apple Mail, tous comptes activés. Un message est identifié par le triplet (account, mailbox, id). ' +
+      'Commencer par list_accounts pour connaître les comptes et leurs boîtes spéciales. ' +
       "Aucun envoi ni aucune suppression sans avoir montré l'aperçu à l'utilisateur et obtenu son accord explicite.",
   },
 );

@@ -1,14 +1,16 @@
 // Crée une réponse avec la commande native de Mail (conserve In-Reply-To / References).
-// Le corps est écrit ensuite par fill_draft.applescript, puis finish_draft enregistre.
+// Expéditeur, sujet, corps et pièces jointes sont écrits ensuite par fill_draft.applescript,
+// puis finish_draft enregistre.
 function main(input, Mail) {
-  const acc = getAccount(Mail, input);
-  const mb = getMailbox(acc, input.source.mailbox);
-  // « reply » sur un message de la boîte Drafts bloque Mail (constaté sur macOS 27).
-  if (mb.path === input.drafts_mailbox || mb.path.indexOf(input.drafts_mailbox + '/') === 0) {
-    fail('INVALID_ARGUMENT', 'Impossible de répondre à un message de la boîte ' + input.drafts_mailbox + '.');
+  const mb = boxOf(Mail, input.source.account, input.source.mailbox);
+  // « reply » sur un message d'une boîte de brouillons bloque Mail (constaté sur macOS 27).
+  if (isInsidePath(mb.path, specialOf(Mail, mb.account).drafts)) {
+    fail('INVALID_ARGUMENT', 'Impossible de répondre à un message de la boîte des brouillons.');
   }
   const src = getMessage(mb, input.source.id);
-  const before = Object.keys(draftIds(acc, input).seen).map(Number);
+  const from = getAccount(Mail, input.from_account || mb.account.name);
+  const sender = senderFor(from, input.from_address);
+  const before = idsIn(draftsBoxOf(Mail, from));
 
   const msg = src.reply({ openingWindow: input.visible, replyToAll: false });
   delay(1);
@@ -28,5 +30,5 @@ function main(input, Mail) {
   }
   setRecipients(Mail, msg, input);
 
-  return { outgoing_id: id, drafts_before: before, source_mailbox: mb.path };
+  return { outgoing_id: id, from_account: from.name, sender: sender, drafts_before: before };
 }

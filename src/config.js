@@ -1,18 +1,12 @@
 import os from 'node:os';
 import path from 'node:path';
 
-// Le compte est volontairement une constante : toutes les opérations sont
-// limitées au compte iCloud, jamais aux autres comptes de Mail.app.
 export const config = Object.freeze({
-  accountName: 'iCloud',
-  accountType: 'iCloud',
+  // Compte utilisé pour écrire un nouveau message quand aucun n'est précisé.
+  // Nom du compte dans Mail, ou une de ses adresses.
+  defaultAccount: process.env.MAIL_MCP_DEFAULT_ACCOUNT || 'iCloud',
 
   osascriptTimeoutMs: 15_000,
-
-  inboxMailbox: 'INBOX',
-  draftsMailbox: 'Drafts',
-  trashMailbox: 'Deleted Messages',
-  junkMailbox: 'Junk',
 
   bodyMaxChars: 20_000,
   listLimitMax: 100,
@@ -26,10 +20,15 @@ export const config = Object.freeze({
 
   // Recherche : une lecture en masse ne peut pas être interrompue, d'où un budget plus court.
   searchHeadersBudgetMs: 6_000,
+  // Budget global de la recherche dans les sujets et expéditeurs, tous comptes confondus.
+  searchHeadersTotalBudgetMs: 35_000,
   // Lire un corps coûte 0,15 à 0,5 s : la recherche dans le contenu est bornée en nombre et en temps.
   contentScanLimitDefault: 30,
   contentScanLimitMax: 500,
-  contentScanBudgetMs: 25_000,
+  contentScanBudgetMs: 15_000,
+
+  // Gmail range une copie de chaque message dans cette boîte : la parcourir doublerait les résultats.
+  allMailPattern: /^\[(Gmail|Google Mail)\]\/(All Mail|Tous les messages|Tous les courriers)$/i,
 
   // Fenêtre de composition visible : indispensable pour qu'une extension comme Antidote
   // puisse s'afficher et que l'utilisateur termine l'envoi. Non modifiable après création.

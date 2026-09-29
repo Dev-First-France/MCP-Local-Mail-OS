@@ -1,22 +1,24 @@
-import { config } from '../config.js';
-import { ErrorCode, MailMcpError } from '../errors.js';
-import { isInside } from '../mailboxes.js';
 import { handler } from '../result.js';
-import { moveMessage } from './organize.js';
-import { CONFIRM_RULE, confirmArg, mailboxArg, messageIdArg, requireConfirmation } from './shared.js';
+import { runMove } from './organize.js';
+import { CONFIRM_RULE, accountArg, confirmArg, mailboxArg, messageIdArg, requireConfirmation } from './shared.js';
 
-export async function deleteMessage({ id, mailbox, confirm }) {
+export async function deleteMessage({ account, mailbox, id, confirm }) {
+  // Vérifié ici, avant tout appel à Mail.
   requireConfirmation(confirm, "le message n'a PAS été mis à la corbeille");
-  if (isInside(mailbox.trim(), config.trashMailbox)) {
-    throw new MailMcpError(
-      ErrorCode.INVALID_ARGUMENT,
-      'Ce message est déjà dans la corbeille. Ce serveur ne supprime jamais définitivement un message et ne vide jamais la corbeille.',
-    );
-  }
-  const res = await moveMessage({ id, from_mailbox: mailbox, to_mailbox: config.trashMailbox });
-  const out = { deleted: res.moved, moved_to: res.to, id: res.id, subject: res.subject, from: res.from, new_id: res.new_id };
+  const res = await runMove({ account, id, from_mailbox: mailbox, to_role: 'trash' });
+  const out = {
+    deleted: res.moved,
+    account: res.from_account,
+    moved_to: res.to,
+    id: res.id,
+    subject: res.subject,
+    from: res.from,
+    new_id: res.new_id,
+  };
   if (res.note) out.note = res.note;
-  if (res.moved) out.undo = `Pour annuler : move_message avec from_mailbox="${res.to}" et to_mailbox="${res.from}".`;
+  if (res.moved) {
+    out.undo = `Pour annuler : move_message avec account="${res.from_account}", from_mailbox="${res.to}", to_mailbox="${res.from}" et id=${res.new_id ?? 'le nouvel id'}.`;
+  }
   return out;
 }
 
@@ -26,9 +28,9 @@ export function registerDeleteTools(server) {
     {
       title: 'Mettre un message à la corbeille',
       description:
-        'Déplace un message vers la corbeille du compte iCloud. Jamais de suppression définitive, jamais de vidage de corbeille. ' +
+        'Déplace un message vers la corbeille de son compte. Jamais de suppression définitive, jamais de vidage de corbeille. ' +
         `Refuse si confirm n'est pas true. ${CONFIRM_RULE}`,
-      inputSchema: { id: messageIdArg, mailbox: mailboxArg, confirm: confirmArg },
+      inputSchema: { account: accountArg, mailbox: mailboxArg, id: messageIdArg, confirm: confirmArg },
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     },
     handler(deleteMessage),

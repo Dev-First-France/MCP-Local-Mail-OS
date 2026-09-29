@@ -1,11 +1,12 @@
 import { z } from 'zod';
+import { requireDefaultAccount } from '../accounts.js';
 import { config } from '../config.js';
 import { ErrorCode, MailMcpError } from '../errors.js';
 import { runJxa } from '../osascript.js';
 import { checkAttachmentFiles } from '../paths.js';
 import { makeDraftId, parseDraftId, renderPreview } from '../preview.js';
 import { handler } from '../result.js';
-import { confirmArg, requireConfirmation } from './shared.js';
+import { accountArg, confirmArg, requireConfirmation } from './shared.js';
 
 const EMAIL = /^[^\s@<>",;]+@[^\s@<>",;]+\.[^\s@<>",;]+$/;
 
@@ -21,18 +22,25 @@ export function parseRecipient(text) {
   return name ? { name, address } : { address };
 }
 
-const parseRecipients = (list) => (list || []).map(parseRecipient);
+export const parseRecipients = (list) => (list || []).map(parseRecipient);
 
 const recipientList = (what) =>
   z.array(z.string().min(3)).describe(`${what} : adresses, au format "adresse@exemple.fr" ou "Prénom Nom <adresse@exemple.fr>".`);
 
-const attachmentsArg = z
+export const attachmentsArg = z
   .array(z.string().min(1))
   .optional()
   .describe('Chemins ABSOLUS de fichiers existants sur ce Mac à joindre. Vérifiés avant toute création de brouillon.');
 
+export const fromAccountArg = accountArg.optional();
+export const fromAddressArg = z
+  .string()
+  .min(3)
+  .optional()
+  .describe("Adresse d'expédition, parmi celles du compte expéditeur. Omise : la première adresse du compte.");
+
 const WINDOW_NOTE =
-  'Le brouillon est ouvert dans une fenêtre de composition de Mail et enregistré dans la boîte Drafts. ' +
+  'Le brouillon est ouvert dans une fenêtre de composition de Mail et enregistré dans les brouillons du compte expéditeur. ' +
   "Il n'est PAS envoyé. Montrez l'aperçu à l'utilisateur ; l'envoi passe par send_email après son accord explicite.";
 
 // Construit la réponse commune à draft_email et forward_email à partir de l'état relu dans Mail.
@@ -41,15 +49,17 @@ export function draftResult(state, files, extra = {}) {
   const attachments = inDraft && inDraft.length > 0 ? inDraft.map((a) => ({ name: a.name, size: a.size })) : files;
   const warnings = [];
   if (!state.draft_copy) {
-    warnings.push("La copie du brouillon n'est pas encore visible dans Drafts : pièces jointes non vérifiées.");
+    warnings.push("La copie du brouillon n'est pas encore visible dans les brouillons du compte : pièces jointes non vérifiées.");
   } else if (inDraft.length < files.length) {
     warnings.push(`Seulement ${inDraft.length} pièce(s) jointe(s) sur ${files.length} dans le brouillon enregistré : vérifiez dans Mail.`);
   }
   return {
     draft_id: makeDraftId(state),
     sent: false,
-    saved_in: config.draftsMailbox,
-    draft_message: state.draft_copy ? { id: state.draft_copy.id, mailbox: state.draft_copy.mailbox } : null,
+    from_account: state.from_account,
+    draft_message: state.draft_copy
+      ? { account: state.draft_copy.account, mailbox: state.draft_copy.mailbox, id: state.draft_copy.id }
+      : null,
     preview: renderPreview({ state, attachments, warnings }),
     details: {
       from: state.sender,
@@ -70,11 +80,16 @@ export function draftResult(state, files, extra = {}) {
   };
 }
 
-async function draftEmail({ to, cc, bcc, subject, body, reply_to_id, reply_to_mailbox, attachments }) {
+async function draftEmail(args) {
+  const { to, cc, bcc, subject, body, from_account, from_address, attachments } = args;
+  const { reply_to_account, reply_to_mailbox, reply_to_id } = args;
   const recipients = { to: parseRecipients(to), cc: parseRecipients(cc), bcc: parseRecipients(bcc) };
   const isReply = reply_to_id !== undefined;
-  if (isReply && !reply_to_mailbox) {
-    throw new MailMcpError(ErrorCode.INVALID_ARGUMENT, 'reply_to_mailbox est obligatoire avec reply_to_id : un message est identifié par (id, mailbox).');
+  if (isReply && !(reply_to_account && reply_to_mailbox)) {
+    throw new MailMcpError(
+      ErrorCode.INVALID_ARGUMENT,
+      'reply_to_account et reply_to_mailbox sont obligatoires avec reply_to_id : un message est identifié par (account, mailbox, id).',
+    );
   }
   if (!isReply && recipients.to.length === 0) {
     throw new MailMcpError(ErrorCode.INVALID_ARGUMENT, 'Au moins un destinataire "to" est requis.');
@@ -83,16 +98,25 @@ async function draftEmail({ to, cc, bcc, subject, body, reply_to_id, reply_to_ma
 
   if (isReply) {
     const { replyDraft } = await import('./reply.js');
-    return replyDraft({ recipients, subject, body, source: { id: reply_to_id, mailbox: reply_to_mailbox }, files });
+    return replyDraft({
+      recipients,
+      subject,
+      body,
+      files,
+      from_account,
+      from_address,
+      source: { account: reply_to_account, mailbox: reply_to_mailbox, id: reply_to_id },
+    });
   }
 
   const state = await runJxa('create_draft', {
     ...recipients,
     subject,
     body,
+    from_account: from_account || (await requireDefaultAccount()),
+    from_address,
     attachments: files.map((f) => f.path),
     visible: config.draftWindowVisible,
-    drafts_mailbox: config.draftsMailbox,
     budget_ms: config.jxaBudgetMs,
   });
   return draftResult(state, files);
@@ -121,7 +145,7 @@ async function sendEmail({ draft_id, confirm }) {
   }
 
   const res = await runJxa('send_draft', { outgoing_id: parsed.outgoingId, budget_ms: config.sendCheckBudgetMs });
-  const summary = { draft_id, to: res.to, cc: res.cc, bcc: res.bcc, subject: res.subject };
+  const summary = { draft_id, from: res.sender, to: res.to, cc: res.cc, bcc: res.bcc, subject: res.subject };
   if (!res.still_composing) {
     return { sent: true, status: 'sent', ...summary };
   }
@@ -132,7 +156,7 @@ async function sendEmail({ draft_id, confirm }) {
     message:
       "L'envoi a été demandé à Mail mais le message n'est PAS parti : il est toujours en cours de composition. " +
       "Une extension de Mail (par exemple le correcteur Antidote) intercepte l'envoi et attend une action dans Mail. " +
-      "Terminez dans Mail : validez la correction puis cliquez sur Envoyer dans la fenêtre du message. " +
+      'Terminez dans Mail : validez la correction puis cliquez sur Envoyer dans la fenêtre du message. ' +
       'Ne rappelez pas send_email pour ce brouillon.',
   };
 }
@@ -143,17 +167,23 @@ export function registerComposeTools(server) {
     {
       title: 'Créer un brouillon',
       description:
-        "Crée un brouillon dans Mail (boîte Drafts du compte iCloud) et NE L'ENVOIE PAS. Renvoie draft_id et un aperçu texte complet " +
-        "(destinataires, sujet, corps, pièces jointes) à montrer à l'utilisateur. Avec reply_to_id et reply_to_mailbox, crée une réponse " +
-        'au message indiqué (fil de discussion conservé, message d\'origine cité) ; "to" peut alors être vide pour répondre à l\'expéditeur.',
+        "Crée un brouillon dans Mail (brouillons du compte expéditeur) et NE L'ENVOIE PAS. Renvoie draft_id et un aperçu texte complet " +
+        "(expéditeur, destinataires, sujet, corps, pièces jointes) à montrer à l'utilisateur. " +
+        'Avec reply_to_account, reply_to_mailbox et reply_to_id, crée une réponse au message indiqué (fil de discussion conservé, ' +
+        'message d\'origine cité) : "to" peut alors être vide pour répondre à l\'expéditeur, et le compte expéditeur est par défaut celui du message.',
       inputSchema: {
         to: recipientList('Destinataires principaux').default([]),
         cc: recipientList('Destinataires en copie').optional(),
         bcc: recipientList('Destinataires en copie cachée').optional(),
         subject: z.string().max(998).describe('Objet. Pour une réponse, laisser vide pour reprendre "Re: objet d\'origine".').default(''),
         body: z.string().describe('Corps du message en texte brut.'),
+        from_account: fromAccountArg.describe(
+          'Compte expéditeur (nom ou adresse). Omis : le compte par défaut (voir list_accounts), ou pour une réponse le compte du message d\'origine.',
+        ),
+        from_address: fromAddressArg,
+        reply_to_account: accountArg.optional().describe('Compte du message auquel répondre.'),
+        reply_to_mailbox: z.string().min(1).optional().describe('Boîte du message auquel répondre.'),
         reply_to_id: z.number().int().optional().describe('Id du message auquel répondre.'),
-        reply_to_mailbox: z.string().min(1).optional().describe('Boîte du message auquel répondre (obligatoire avec reply_to_id).'),
         attachments: attachmentsArg,
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -166,7 +196,7 @@ export function registerComposeTools(server) {
     {
       title: 'Envoyer un brouillon',
       description:
-        `N'envoie que si confirm vaut true ; sinon renvoie l'erreur CONFIRMATION_REQUIRED. ` +
+        "N'envoie que si confirm vaut true ; sinon renvoie l'erreur CONFIRMATION_REQUIRED. " +
         "Ne jamais appeler ce tool sans avoir montré l'aperçu du brouillon à l'utilisateur et obtenu son accord explicite dans la conversation. " +
         "Refuse aussi si le brouillon a changé depuis l'aperçu (DRAFT_CHANGED). " +
         'Le résultat indique si le message est réellement parti : avec "sent": false et "status": "awaiting_manual_send", ' +
@@ -180,4 +210,3 @@ export function registerComposeTools(server) {
     handler(sendEmail),
   );
 }
-

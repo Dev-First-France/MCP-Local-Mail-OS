@@ -1,10 +1,18 @@
 import { z } from 'zod';
 import { ErrorCode, MailMcpError } from '../errors.js';
 
+export const accountArg = z
+  .string()
+  .min(1)
+  .describe('Compte de Mail : son nom tel que renvoyé par list_accounts (ex. "iCloud"), ou une de ses adresses.');
+
 export const mailboxArg = z
   .string()
   .min(1)
-  .describe('Chemin complet de la boîte dans le compte iCloud, tel que renvoyé par list_mailboxes (ex. "INBOX", "Archives/Clients").');
+  .describe(
+    'Boîte du compte : chemin complet renvoyé par list_mailboxes (ex. "Archives/Clients"), ' +
+      'ou nom générique valable pour tout compte : "INBOX", "Drafts", "Sent", "Trash", "Junk".',
+  );
 
 export const messageIdArg = z.number().int().describe('Id du message, renvoyé par list_messages ou search_messages.');
 
@@ -16,6 +24,8 @@ export const confirmArg = z
 
 export const CONFIRM_RULE =
   "Ne jamais appeler ce tool sans avoir montré l'aperçu à l'utilisateur et obtenu son accord explicite dans la conversation.";
+
+export const MESSAGE_KEY = 'Un message est identifié par le triplet (account, mailbox, id).';
 
 export function requireConfirmation(confirm, notDone) {
   if (confirm !== true) {

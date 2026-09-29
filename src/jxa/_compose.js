@@ -8,13 +8,31 @@ function recipientsOf(list) {
   });
 }
 
-function senderFor(acc) {
-  const addresses = acc.emailAddresses();
-  if (!addresses || addresses.length === 0) {
-    fail('ACCOUNT_NOT_FOUND', 'Le compte ' + acc.name() + ' n\'a aucune adresse d\'expédition.');
+// Expéditeur : toujours une adresse du compte demandé. Sans expéditeur explicite, Mail prendrait
+// son compte par défaut et le brouillon atterrirait dans les brouillons d'un autre compte.
+function senderFor(account, fromAddress) {
+  const addresses = orNull(function () { return account.ref.emailAddresses(); }) || [];
+  if (addresses.length === 0) {
+    fail('ACCOUNT_NOT_FOUND', 'Le compte ' + account.name + ' n\'a aucune adresse d\'expédition.');
   }
-  const fullName = orNull(function () { return acc.fullName(); });
-  return fullName ? fullName + ' <' + addresses[0] + '>' : addresses[0];
+  let address = addresses[0];
+  if (fromAddress) {
+    const hit = addresses.filter(function (a) { return looseKey(a) === looseKey(fromAddress); });
+    if (hit.length === 0) {
+      fail('INVALID_ARGUMENT', 'L\'adresse ' + fromAddress + ' n\'appartient pas au compte ' + account.name + '.', { account: account.name, addresses: addresses });
+    }
+    address = hit[0];
+  }
+  const fullName = orNull(function () { return account.ref.fullName(); });
+  return fullName ? fullName + ' <' + address + '>' : address;
+}
+
+function draftsBoxOf(Mail, account) {
+  const path = specialOf(Mail, account).drafts;
+  if (path === null) {
+    fail('MAILBOX_NOT_FOUND', 'Boîte des brouillons introuvable pour le compte ' + account.name + '.', { account: account.name });
+  }
+  return getMailbox(Mail, account, path);
 }
 
 function outgoingById(Mail, id) {
@@ -23,7 +41,7 @@ function outgoingById(Mail, id) {
     fail(
       'DRAFT_NOT_FOUND',
       'Brouillon ' + id + ' introuvable parmi les messages en cours de composition. Il a pu être envoyé, fermé, ou Mail a été relancé. ' +
-        'S\'il figure encore dans la boîte Drafts, envoyez-le depuis Mail ; sinon recréez-le avec draft_email.',
+        'S\'il figure encore dans la boîte des brouillons, envoyez-le depuis Mail ; sinon recréez-le avec draft_email.',
       { open_drafts: ids },
     );
   }
@@ -58,32 +76,35 @@ function setRecipients(Mail, msg, input) {
   });
 }
 
-function draftIds(acc, input) {
-  const drafts = getMailbox(acc, input.drafts_mailbox);
-  const seen = {};
-  bulk(drafts, [function (m) { return m.id(); }])[0].forEach(function (id) { seen[id] = true; });
-  return { box: drafts, seen: seen };
+function idsIn(box) {
+  return bulk(box, [function (m) { return m.id(); }])[0];
 }
 
-// Retrouve la copie enregistrée dans Drafts : nouvelle venue portant le même sujet.
+// Retrouve la copie enregistrée dans les brouillons du compte : nouvelle venue portant le même sujet.
 // C'est sur elle que l'on vérifie les pièces jointes (illisibles sur le message en composition).
-function waitForDraftCopy(before, subject, expectedAttachments, input) {
+function waitForDraftCopy(box, beforeIds, subject, expectedAttachments, input) {
+  const seen = {};
+  beforeIds.forEach(function (id) { seen[id] = true; });
   let found = null;
   for (let attempt = 0; attempt < 12; attempt++) {
     delay(0.5);
-    const cols = bulk(before.box, [function (m) { return m.id(); }, function (m) { return m.subject(); }]);
+    const cols = bulk(box, [function (m) { return m.id(); }, function (m) { return m.subject(); }]);
     let candidate = null;
     for (let i = 0; i < cols[0].length; i++) {
-      if (!before.seen[cols[0][i]] && cols[1][i] === subject) candidate = cols[0][i];
+      if (!seen[cols[0][i]] && cols[1][i] === subject) candidate = cols[0][i];
     }
     if (candidate !== null) {
-      const copy = before.box.ref.messages.byId(candidate);
+      const copy = box.ref.messages.byId(candidate);
       const names = orNull(function () { return copy.mailAttachments.name(); }) || [];
       const sizes = orNull(function () { return copy.mailAttachments.fileSize(); }) || [];
+      const headers = orNull(function () { return copy.allHeaders(); }) || '';
       found = {
         id: candidate,
-        mailbox: before.box.path,
+        account: box.account.name,
+        mailbox: box.path,
         attachments: names.map(function (n, i) { return { name: n, size: sizes[i] === undefined ? null : sizes[i] }; }),
+        in_reply_to: /^in-reply-to:/im.test(headers),
+        references: /^references:/im.test(headers),
       };
       if (names.length >= expectedAttachments) return found;
     }

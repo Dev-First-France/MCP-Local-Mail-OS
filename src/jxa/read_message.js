@@ -8,8 +8,7 @@ function recipients(list) {
 }
 
 function main(input, Mail) {
-  const acc = getAccount(Mail, input);
-  const mb = getMailbox(acc, input.mailbox);
+  const mb = boxOf(Mail, input.account, input.mailbox);
   const msg = getMessage(mb, input.id);
 
   const body = orNull(function () { return msg.content(); }) || '';
@@ -21,7 +20,9 @@ function main(input, Mail) {
 
   return {
     id: input.id,
+    account: mb.account.name,
     mailbox: mb.path,
+    mailbox_role: roleOf(Mail, mb.account, mb.path),
     message_id: orNull(function () { return msg.messageId(); }),
     subject: orNull(function () { return msg.subject(); }) || '',
     sender: orNull(function () { return msg.sender(); }) || '',

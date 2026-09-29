@@ -73,7 +73,7 @@ function errorFromStderr(stderr) {
  */
 export async function runJxa(op, input = {}, { timeoutMs = config.osascriptTimeoutMs } = {}) {
   const script = await loadScript(op);
-  const payload = JSON.stringify({ account: config.accountName, accountType: config.accountType, ...input });
+  const payload = JSON.stringify(input);
   const started = Date.now();
   const res = await execOsascript(['-l', 'JavaScript', '-e', script], payload, timeoutMs);
   const elapsed = Date.now() - started;

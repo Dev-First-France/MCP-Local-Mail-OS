@@ -1,9 +1,12 @@
 // Messages les plus récents d'une boîte.
 // Sélection : ids et dates en masse, tri en JS (jamais d'accès par index ni de « whose »).
-// Détails : en masse pour une petite boîte, par id pour une grosse.
+// Avec details=false, ne renvoie que les candidats (id, date) : sert à fusionner plusieurs comptes.
+// Avec optional=true, une boîte absente du compte donne found=false au lieu d'une erreur.
 function main(input, Mail) {
-  const acc = getAccount(Mail, input);
-  const mb = getMailbox(acc, input.mailbox);
+  const account = getAccount(Mail, input.account);
+  const mb = getMailbox(Mail, account, input.mailbox, input.optional === true);
+  if (mb === null) return { account: account.name, found: false };
+
   const getters = [
     function (m) { return m.id(); },
     function (m) { return m.dateReceived(); },
@@ -19,6 +22,14 @@ function main(input, Mail) {
   const matching = idx.length;
   idx.sort(function (a, b) { return dates[b] - dates[a]; });
   idx = idx.slice(0, input.limit);
+
+  const base = { account: account.name, mailbox: mb.path, found: true, total: ids.length, matching: matching };
+  if (input.details === false) {
+    base.candidates = idx.map(function (i) {
+      return { id: ids[i], account: account.name, mailbox: mb.path, t: dates[i] ? dates[i].getTime() : 0 };
+    });
+    return base;
+  }
 
   const messages = [];
   const remaining = [];
@@ -38,7 +49,7 @@ function main(input, Mail) {
   idx.forEach(function (i) {
     const id = ids[i];
     if (messages.length > 0 && outOfTime(input)) {
-      remaining.push({ id: id, mailbox: mb.path });
+      remaining.push({ id: id, account: account.name, mailbox: mb.path });
       return;
     }
     const msg = mb.ref.messages.byId(id);
@@ -46,6 +57,7 @@ function main(input, Mail) {
       if (rows) {
         messages.push({
           id: id,
+          account: account.name,
           mailbox: mb.path,
           subject: rows[1][i] || '',
           sender: rows[2][i] || '',
@@ -55,10 +67,12 @@ function main(input, Mail) {
           has_attachments: msg.mailAttachments.length > 0,
         });
       } else {
-        messages.push(summaryOf(msg, id, mb.path));
+        messages.push(summaryOf(msg, id, mb));
       }
     } catch (e) {}
   });
 
-  return { mailbox: mb.path, total: ids.length, matching: matching, messages: messages, remaining: remaining };
+  base.messages = messages;
+  base.remaining = remaining;
+  return base;
 }
