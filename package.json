@@ -1,0 +1,28 @@
+{
+  "name": "mail-mcp",
+  "version": "0.1.0",
+  "description": "Serveur MCP local pilotant Apple Mail (compte iCloud) via osascript",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "mail-mcp": "index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "os": [
+    "darwin"
+  ],
+  "scripts": {
+    "start": "node index.js",
+    "smoke": "node scripts/smoke.js",
+    "inspect": "npx @modelcontextprotocol/inspector node index.js",
+    "test": "node --test"
+  },
+  "private": true,
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "zod": "^4.6.5"
+  }
+}
