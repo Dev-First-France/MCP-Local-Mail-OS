@@ -9,7 +9,7 @@ import { registerOrganizeTools } from './src/tools/organize.js';
 import { registerReadTools } from './src/tools/read.js';
 
 const server = new McpServer(
-  { name: 'mail-mcp', version: '0.2.0' },
+  { name: 'mail-mcp', version: '0.3.0' },
   {
     instructions:
       'Pilote Apple Mail, tous comptes activés. Un message est identifié par le triplet (account, mailbox, id). ' +

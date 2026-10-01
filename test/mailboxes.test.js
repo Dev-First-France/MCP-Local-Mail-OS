@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildTree, isInside } from '../src/mailboxes.js';
+import { buildTree, isInside, mailboxNameProblem } from '../src/mailboxes.js';
 
 const box = (path) => ({ name: path.split('/').pop(), path, message_count: 1, unread_count: 0 });
 
@@ -24,4 +24,16 @@ test('isInside ne confond pas les préfixes', () => {
   assert.equal(isInside('Junk', 'Junk'), true);
   assert.equal(isInside('Junk/Vieux', 'Junk'), true);
   assert.equal(isInside('Junk mail perso', 'Junk'), false);
+});
+
+test('mailboxNameProblem accepte un nom simple et refuse les chemins', () => {
+  assert.equal(mailboxNameProblem('Projets'), null);
+  assert.equal(mailboxNameProblem('Clients 2026 – été'), null);
+  assert.match(mailboxNameProblem(''), /vide/);
+  assert.match(mailboxNameProblem('Archives/Clients'), /"parent"/);
+  assert.match(mailboxNameProblem('Projets '), /espace/);
+  assert.match(mailboxNameProblem(' Projets'), /espace/);
+  assert.match(mailboxNameProblem('Nom\tTab'), /contrôle/);
+  assert.match(mailboxNameProblem('x'.repeat(201)), /trop long/);
+  assert.match(mailboxNameProblem(undefined), /vide/);
 });

@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { config } from '../config.js';
 import { runJxa } from '../osascript.js';
+import { ErrorCode, MailMcpError } from '../errors.js';
+import { mailboxNameProblem } from '../mailboxes.js';
 import { handler } from '../result.js';
 import { accountArg, mailboxArg, messageIdArg } from './shared.js';
 
@@ -35,7 +37,7 @@ export function registerOrganizeTools(server) {
       title: 'Déplacer un message',
       description:
         "Déplace un message vers une autre boîte, du même compte ou d'un autre compte (to_account). La boîte cible doit exister : " +
-        "elle n'est jamais créée, et l'erreur liste alors les boîtes existantes. L'id du message change après déplacement : " +
+        "elle n'est jamais créée ici (voir create_mailbox), et l'erreur liste alors les boîtes existantes. L'id du message change après déplacement : " +
         'utiliser "new_id" avec le compte et la boîte de destination.',
       inputSchema: {
         account: accountArg.describe('Compte où se trouve le message (nom ou adresse).'),
@@ -47,6 +49,36 @@ export function registerOrganizeTools(server) {
       annotations: { ...WRITE, idempotentHint: false },
     },
     handler(({ account, id, from_mailbox, to_mailbox, to_account }) => runMove({ account, id, from_mailbox, to_mailbox, to_account })),
+  );
+
+  server.registerTool(
+    'create_mailbox',
+    {
+      title: 'Créer une boîte',
+      description:
+        "Crée une boîte (dossier) dans un compte, à la racine ou sous une boîte parente existante (parent). " +
+        'Le nom est un nom simple, sans "/". Refuse si une boîte de même chemin existe déjà (MAILBOX_EXISTS), ' +
+        "y compris à la casse près, et si la boîte parente n'existe pas (MAILBOX_NOT_FOUND). Le résultat donne le chemin " +
+        'complet à utiliser ensuite avec move_message ou list_messages. Ne supprime ni ne renomme jamais une boîte.',
+      inputSchema: {
+        account: accountArg.describe('Compte où créer la boîte (nom ou adresse).'),
+        name: z.string().min(1).describe('Nom de la nouvelle boîte (ex. "Projets"), sans "/".'),
+        parent: mailboxArg.optional().describe('Boîte parente existante (chemin complet ou nom générique). Omis : à la racine du compte.'),
+      },
+      annotations: { ...WRITE, idempotentHint: false },
+    },
+    handler(async ({ account, name, parent }) => {
+      const problem = mailboxNameProblem(name);
+      if (problem) throw new MailMcpError(ErrorCode.INVALID_ARGUMENT, problem, { name });
+      const res = await runJxa('create_mailbox', { account, name, parent, budget_ms: config.jxaBudgetMs });
+      const out = { created: res.created, account: res.account, name: res.name, parent: res.parent, path: res.path };
+      if (!res.created) {
+        out.note =
+          "Mail a accepté la création mais la boîte n'est pas encore visible (synchronisation en cours). " +
+          'Relancez list_mailboxes dans quelques secondes avant de l\'utiliser.';
+      }
+      return out;
+    }),
   );
 
   server.registerTool(

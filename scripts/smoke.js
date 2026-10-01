@@ -11,7 +11,7 @@ const transport = new StdioClientTransport({
   args: [path.join(root, 'index.js')],
   stderr: 'ignore',
 });
-const client = new Client({ name: 'mail-mcp-smoke', version: '0.2.0' });
+const client = new Client({ name: 'mail-mcp-smoke', version: '0.3.0' });
 
 let failures = 0;
 

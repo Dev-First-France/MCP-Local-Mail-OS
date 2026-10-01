@@ -158,6 +158,7 @@ claude mcp add --scope user mail -- node /Users/vous/MCP-Local-Mail-OS/index.js
 | `list_messages` | Messages d'une boîte, du plus récent au plus ancien |
 | `search_messages` | Recherche dans le sujet, l'expéditeur et le contenu |
 | `read_message` | En-têtes, corps en texte (20 000 caractères au plus), liste des pièces jointes |
+| `create_mailbox` | Crée une boîte (dossier) dans un compte, à la racine ou sous une boîte existante |
 | `move_message` | Déplace un message vers une boîte existante, du même compte ou d'un autre |
 | `flag_message` | Pose ou retire le drapeau |
 | `mark_read` | Marque lu ou non lu |
@@ -172,6 +173,7 @@ claude mcp add --scope user mail -- node /Users/vous/MCP-Local-Mail-OS/index.js
 - Un **compte** est désigné par son nom dans Mail (`iCloud`, `Travail`…) ou par une de ses adresses. Les comptes désactivés dans Mail sont ignorés.
 - Les tools de lecture (`list_mailboxes`, `list_messages`, `search_messages`) acceptent d'omettre le compte : ils portent alors sur **tous les comptes activés**. Tous les autres tools exigent le compte.
 - Une **boîte** est désignée par son chemin complet, par exemple `Archives/Clients`, ou par un nom générique valable pour tout compte : `INBOX`, `Drafts`, `Sent`, `Trash`, `Junk`. Le serveur le traduit dans le nom propre au fournisseur (`[Gmail]/Trash`, `Éléments supprimés`, `Deleted Messages`…).
+- Une **nouvelle boîte** se crée avec `create_mailbox` : un nom simple (`Projets`) et, pour une sous-boîte, la boîte parente (`parent: "Archives"`). Le serveur refuse un nom déjà pris et ne supprime ni ne renomme jamais une boîte (Mail ne le permet pas par script).
 - Un **message** est identifié par le triplet `(account, mailbox, id)`. Après un déplacement, son id change : le résultat donne le nouveau.
 - Un **nouveau message** part du compte par défaut, sauf si `from_account` est précisé. Une réponse ou un transfert part du compte qui a reçu le message.
 
@@ -196,6 +198,7 @@ Si vous modifiez le brouillon dans Mail après l'aperçu, `send_email` refuse (`
 7. « Quels comptes de messagerie as-tu à disposition ? Montre-moi les non-lus de chacun. »
 8. « Écris à Paul depuis mon compte professionnel pour confirmer la réunion de lundi, et montre-moi le brouillon. »
 6. « Mets à la corbeille les trois mails promotionnels que tu viens de lister, après m'avoir montré lesquels. »
+9. « Crée une boîte Fournisseurs sur mon compte iCloud et ranges-y les mails de la boîte de réception qui viennent de mon hébergeur. »
 
 ## Limites à connaître
 
@@ -204,7 +207,8 @@ Si vous modifiez le brouillon dans Mail après l'aperçu, `send_email` refuse (`
 - La recherche par défaut ignore la corbeille, les indésirables et la boîte « All Mail » de Gmail. Nommez la boîte pour y chercher.
 - Lister 100 messages d'une très grosse boîte prend une quinzaine de secondes.
 - Les boîtes locales « Sur mon Mac » ne sont pas gérées.
-- Essais réels : tous les tools sur iCloud et Gmail. Sur Exchange/Outlook, la réponse, le transfert et le déplacement d'un message reçu n'ont pas été vérifiés.
+- Une boîte créée par le serveur ne peut pas être supprimée ni renommée par lui : faites-le dans Mail.
+- Essais réels : tous les tools sur iCloud et Gmail (`create_mailbox` sur iCloud seulement). Sur Exchange/Outlook, la réponse, le transfert et le déplacement d'un message reçu n'ont pas été vérifiés.
 - Un brouillon ne peut être envoyé par `send_email` que tant que Mail n'a pas été quitté. Après un redémarrage de Mail, il reste dans les brouillons du compte : envoyez-le depuis Mail ou recréez-le.
 - Le transfert reprend le message d'origine en **texte** : la mise en forme HTML n'est pas conservée. Les pièces jointes le sont.
 - Les brouillons sont en texte brut ; Mail y ajoute votre signature.

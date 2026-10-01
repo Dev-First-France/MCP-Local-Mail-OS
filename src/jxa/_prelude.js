@@ -199,7 +199,7 @@ function resolveMailboxPath(Mail, account, wanted, optional) {
   if (optional) return null;
   fail(
     'MAILBOX_NOT_FOUND',
-    'Boîte « ' + wanted + ' » introuvable dans le compte ' + account.name + '. Utilisez un des chemins existants (aucune boîte n\'est créée automatiquement).',
+    'Boîte « ' + wanted + ' » introuvable dans le compte ' + account.name + '. Utilisez un des chemins existants (aucune boîte n\'est créée automatiquement : voir create_mailbox).',
     { account: account.name, existing_mailboxes: paths },
   );
 }

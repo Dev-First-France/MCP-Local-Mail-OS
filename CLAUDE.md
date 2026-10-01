@@ -14,9 +14,11 @@ Serveur MCP local (Node.js ESM, transport stdio) qui pilote Apple Mail sur macOS
 | 5 | Suppression : `delete_message` | fait |
 
 | 6 | Version 0.2 : tous les comptes activés, `list_accounts`, déplacement entre comptes, choix du compte expéditeur | fait |
+| 7 | Version 0.3 : `create_mailbox` (création d'une boîte, à la racine ou sous un parent) | fait |
 
-Les 13 tools ont été essayés sur de vrais comptes le 2026-09-29, sur des messages de test `[mail-mcp test]` mis ensuite à la corbeille.
+Les 13 tools de la version 0.2 ont été essayés sur de vrais comptes le 2026-09-29, sur des messages de test `[mail-mcp test]` mis ensuite à la corbeille.
 Vérifié sur iCloud et Gmail (IMAP) : tous les tools. Vérifié sur un compte Exchange/Outlook : lecture, recherche, brouillon, drapeau, mise à la corbeille. **Non vérifié** sur Exchange/Outlook : réponse, transfert et déplacement d'un message reçu (le compte de test ne recevait plus de courrier dans Mail).
+`create_mailbox` (version 0.3) a été essayé le 2026-09-30 sur iCloud seulement : création à la racine et sous un parent, doublon, parent absent. Non essayé sur Gmail et Exchange/Outlook.
 
 Mise en service dans Claude Desktop faite le 2026-09-29 : démarrage confirmé par le journal (`Server started and connected successfully`, puis `tools/list`).
 
@@ -31,13 +33,13 @@ src/osascript.js      runner unique : runJxa (script statique via -e, entrée JS
                       runAppleScript (fichier statique, valeurs par argv), timeout 15 s
 src/escape.js         échappement AppleScript (non utilisé par le serveur : filet de sécurité testé)
 src/result.js         mise en forme des réponses MCP (succès / erreur)
-src/mailboxes.js      fonctions pures sur les boîtes (arbre, inclusion)
+src/mailboxes.js      fonctions pures sur les boîtes (arbre, inclusion, validation d'un nom de boîte)
 src/paths.js          expansion de ~, validation des noms, anti-collision, contrôle des fichiers à joindre
 src/preview.js        aperçu texte d'un brouillon, empreinte, draft_id
 src/quote.js          citation (réponse) et reprise du message d'origine (transfert)
 src/tools/shared.js   schémas communs, règle de confirmation
 src/tools/read.js     list_accounts, list_mailboxes, list_messages, search_messages, read_message
-src/tools/organize.js move_message, flag_message, mark_read
+src/tools/organize.js move_message, create_mailbox, flag_message, mark_read
 src/tools/attachments.js  save_attachment
 src/tools/compose.js  draft_email, send_email
 src/tools/reply.js    réponse native (appelée par draft_email)
@@ -151,6 +153,7 @@ Un argument invalide (type, borne, `account` manquant) est rejeté par le SDK av
 
 | Tool | Entrée | Sortie |
 |---|---|---|
+| `create_mailbox` | `account`, `name` (nom simple, sans `/`), `parent?` (boîte existante) | `{created, account, name, parent, path, note?}` — chemin déjà pris (à la casse près) : `MAILBOX_EXISTS` ; parent absent : `MAILBOX_NOT_FOUND` |
 | `move_message` | `account`, `id`, `from_mailbox`, `to_mailbox`, `to_account?` | `{moved, id, subject, from_account, from, to_account, to, new_id, note?}` — boîte cible absente : `MAILBOX_NOT_FOUND` avec `existing_mailboxes`, aucune création |
 | `flag_message` | `account`, `mailbox`, `id`, `flagged=true` | `{id, account, mailbox, subject, flagged}` (valeur relue dans Mail) |
 | `mark_read` | `account`, `mailbox`, `id`, `read=true` | `{id, account, mailbox, subject, read}` (valeur relue dans Mail) |
@@ -169,7 +172,7 @@ Un argument invalide (type, borne, `account` manquant) est rejeté par le SDK av
 - Destinataires : `adresse@exemple.fr` ou `Prénom Nom <adresse@exemple.fr>`, un par élément de tableau.
 
 ### Codes d'erreur
-`ACCOUNT_NOT_FOUND` (compte inconnu ou désactivé, avec la liste des comptes activés), `MAILBOX_NOT_FOUND` (avec la liste des boîtes), `MESSAGE_NOT_FOUND`, `ATTACHMENT_NOT_FOUND` (pièce absente du message, ou fichier à joindre absent du disque), `DRAFT_NOT_FOUND`, `DRAFT_CHANGED`, `INVALID_ARGUMENT`, `CONFIRMATION_REQUIRED`, `AUTOMATION_DENIED`, `MAIL_NOT_RUNNING`, `TIMEOUT`, `OSASCRIPT_ERROR`.
+`ACCOUNT_NOT_FOUND` (compte inconnu ou désactivé, avec la liste des comptes activés), `MAILBOX_NOT_FOUND` (avec la liste des boîtes), `MAILBOX_EXISTS` (création d'une boîte dont le chemin est déjà pris), `MESSAGE_NOT_FOUND`, `ATTACHMENT_NOT_FOUND` (pièce absente du message, ou fichier à joindre absent du disque), `DRAFT_NOT_FOUND`, `DRAFT_CHANGED`, `INVALID_ARGUMENT`, `CONFIRMATION_REQUIRED`, `AUTOMATION_DENIED`, `MAIL_NOT_RUNNING`, `TIMEOUT`, `OSASCRIPT_ERROR`.
 
 ## Constats et pièges sur macOS 27 (Mail 16.0)
 
@@ -203,6 +206,16 @@ Mesures faites le 2026-09-29 sur un compte réel (boîte de réception d'environ
 | Sur une réponse native, l'expéditeur choisi par Mail est celui du compte du message | Pour répondre depuis un autre compte, `sender` est écrit par `fill_draft.applescript` ; le brouillon arrive alors bien dans les brouillons de ce compte |
 | Recherche sur tous les comptes (≈ 76 000 messages, ≈ 100 boîtes) : ≈ 38 s ; limitée aux boîtes de réception : ≈ 5 s | Budget global de 35 s pour sujets et expéditeurs ; la description du tool recommande de préciser `account` ou `mailbox` |
 | Un compte peut être activé dans Mail sans recevoir de courrier (synchronisation en panne) : un message envoyé vers lui n'apparaît jamais | Ne pas attendre indéfiniment un message de test ; vérifier la date du dernier message reçu |
+
+### Création de boîtes (sondes du 2026-09-30, iCloud)
+
+| Constat | Conséquence |
+|---|---|
+| `account.mailboxes.push(Mail.Mailbox({name}))` crée la boîte en 2 à 3 s, visible aussitôt dans `account.mailboxes` | Relecture de la liste des chemins (cache `MAILBOX_PATHS` invalidé) sous budget de temps, `created` = boîte relue |
+| Un `name` contenant `/` (`Parent/Enfant`) crée une sous-boîte ; `name()` renvoie le nom feuille | Sous-boîte = `parent` résolu par `resolveMailboxPath` + `/` + nom ; le nom simple ne doit pas contenir `/` (contrôle côté Node) |
+| Créer une boîte dont le nom existe déjà : `push` réussit **sans erreur** et ne crée rien | Existence vérifiée avant l'écriture, à la casse près (`MAILBOX_EXISTS`) |
+| Créer `Absent/Enfant` avec un parent inexistant : Mail crée `Enfant` sous un parent implicite, qui n'apparaît pas dans `account.mailboxes` | Le parent doit exister (`MAILBOX_NOT_FOUND`) |
+| Supprimer une boîte par script (`Mail.delete(mb)`, `mb.delete()`, AppleScript `delete mailbox`) : erreur -10000 sur iCloud, même vide | Aucun tool de suppression ni de renommage de boîte. Une boîte de test créée par une sonde se supprime **à la main dans Mail** |
 
 ### Composition et envoi (sondes du 2026-09-29)
 
@@ -251,3 +264,4 @@ Mesures faites le 2026-09-29 sur un compte réel (boîte de réception d'environ
 - N'utiliser que des messages de test dont le sujet commence par `[mail-mcp test]`, adressés à soi-même.
 - Toute sonde lancée à la main doit avoir un garde-fou de temps ; tuer `osascript` ne débloque pas Mail.
 - Après les essais : fermer les fenêtres de composition restantes (`close_draft`) et mettre les messages de test à la corbeille avec `delete_message`.
+- Ne créer une boîte de test qu'en cas de nécessité : Mail refuse sa suppression par script, il faut la retirer à la main.
