@@ -1,6 +1,6 @@
 # mail-mcp
 
-Serveur MCP local (Node.js ESM, transport stdio) qui pilote Apple Mail sur macOS 27 via `osascript` (JXA, plus un script AppleScript). Il gère **tous les comptes activés** de Mail (iCloud, Gmail, Exchange/Outlook, IMAP). Utilisé depuis **Claude Desktop uniquement**.
+Serveur MCP local (Node.js ESM, transport stdio) qui pilote Apple Mail sur macOS 27 via `osascript` (JXA, plus un script AppleScript). Il gère **tous les comptes activés** de Mail (iCloud, Gmail, Exchange/Outlook, IMAP) et lit le carnet d'adresses de l'application Contacts. Utilisé depuis **Claude Desktop uniquement**.
 
 ## État d'avancement
 
@@ -15,10 +15,12 @@ Serveur MCP local (Node.js ESM, transport stdio) qui pilote Apple Mail sur macOS
 
 | 6 | Version 0.2 : tous les comptes activés, `list_accounts`, déplacement entre comptes, choix du compte expéditeur | fait |
 | 7 | Version 0.3 : `create_mailbox` (création d'une boîte, à la racine ou sous un parent) | fait |
+| 8 | Version 0.4 : `search_contacts` (recherche d'adresses dans l'application Contacts) | fait |
 
 Les 13 tools de la version 0.2 ont été essayés sur de vrais comptes le 2026-09-29, sur des messages de test `[mail-mcp test]` mis ensuite à la corbeille.
 Vérifié sur iCloud et Gmail (IMAP) : tous les tools. Vérifié sur un compte Exchange/Outlook : lecture, recherche, brouillon, drapeau, mise à la corbeille. **Non vérifié** sur Exchange/Outlook : réponse, transfert et déplacement d'un message reçu (le compte de test ne recevait plus de courrier dans Mail).
 `create_mailbox` (version 0.3) a été essayé le 2026-09-30 sur iCloud seulement : création à la racine et sous un parent, doublon, parent absent. Non essayé sur Gmail et Exchange/Outlook.
+`search_contacts` (version 0.4) a été essayé le 2026-10-05 depuis le Terminal (`npm run smoke`), Contacts ouvert puis fermé. **Non essayé** depuis Claude Desktop, où l'autorisation de contrôler Contacts reste à accorder au premier appel.
 
 Mise en service dans Claude Desktop faite le 2026-09-29 : démarrage confirmé par le journal (`Server started and connected successfully`, puis `tools/list`).
 
@@ -33,12 +35,14 @@ src/osascript.js      runner unique : runJxa (script statique via -e, entrée JS
                       runAppleScript (fichier statique, valeurs par argv), timeout 15 s
 src/escape.js         échappement AppleScript (non utilisé par le serveur : filet de sécurité testé)
 src/result.js         mise en forme des réponses MCP (succès / erreur)
+src/contacts.js       fonctions pures sur les fiches de Contacts (filtrage, libellés)
 src/mailboxes.js      fonctions pures sur les boîtes (arbre, inclusion, validation d'un nom de boîte)
 src/paths.js          expansion de ~, validation des noms, anti-collision, contrôle des fichiers à joindre
 src/preview.js        aperçu texte d'un brouillon, empreinte, draft_id
 src/quote.js          citation (réponse) et reprise du message d'origine (transfert)
 src/tools/shared.js   schémas communs, règle de confirmation
 src/tools/read.js     list_accounts, list_mailboxes, list_messages, search_messages, read_message
+src/tools/contacts.js search_contacts
 src/tools/organize.js move_message, create_mailbox, flag_message, mark_read
 src/tools/attachments.js  save_attachment
 src/tools/compose.js  draft_email, send_email
@@ -57,11 +61,11 @@ test/                 tests unitaires sans Mail (node --test)
 
 ```bash
 npm test           # tests unitaires (ne touchent pas à Mail) — `node --test` sans argument
-npm run smoke      # lecture seule : tools, comptes, boîtes, derniers messages reçus tous comptes confondus
+npm run smoke      # lecture seule : tools, comptes, boîtes, derniers messages reçus tous comptes confondus, nombre de fiches de Contacts
 npm run inspect    # inspector MCP : npx @modelcontextprotocol/inspector node index.js
 ```
 
-- Mail doit être **ouvert** : le serveur ne le lance pas (erreur `MAIL_NOT_RUNNING`).
+- Mail doit être **ouvert** : le serveur ne le lance pas (erreur `MAIL_NOT_RUNNING`). Contacts, lui, est lancé par `search_contacts` s'il est fermé, puis refermé.
 - `npm run smoke` et `npm run inspect` lancent leur propre instance du serveur : ils fonctionnent que Claude Desktop soit ouvert ou non.
 
 ## Configuration dans Claude Desktop
@@ -80,7 +84,7 @@ Fichier : `~/Library/Application Support/Claude/claude_desktop_config.json` (Ré
 - **Commande = chemin absolu de Node.** Claude Desktop ne lit pas la configuration du shell : le Node de nvm (`~/.nvm/versions/node/<version>/bin/node`) lui est invisible, et son chemin change à chaque mise à jour. Préférer un chemin stable comme `/usr/local/bin/node` (Node ≥ 20).
 - Les chemins du fichier sont absolus : `~` n'y est pas développé.
 - **Après toute modification du code ou de la configuration : quitter Claude Desktop avec Cmd+Q puis le relancer.** Fermer la fenêtre ne suffit pas ; le serveur n'est démarré qu'au lancement de l'application.
-- L'autorisation Automation est accordée par application : sous Claude Desktop, c'est **Claude** qui doit être autorisé à contrôler **Mail** (Réglages Système > Confidentialité et sécurité > Automatisation). L'autorisation donnée au Terminal pour `npm run smoke` ne vaut pas pour Claude.
+- L'autorisation Automation est accordée par application : sous Claude Desktop, c'est **Claude** qui doit être autorisé à contrôler **Mail** (Réglages Système > Confidentialité et sécurité > Automatisation). L'autorisation donnée au Terminal pour `npm run smoke` ne vaut pas pour Claude. `search_contacts` demande en plus l'autorisation de contrôler **Contacts**.
 - Journaux : `~/Library/Logs/Claude/mcp-server-Mail Mac Os.log` (ce serveur, y compris tout ce qu'il écrit sur stderr ; le fichier porte le nom de l'entrée, l'ancien `mcp-server-mail.log` n'est plus alimenté) et `~/Library/Logs/Claude/mcp.log` (tous les serveurs).
 - Claude Desktop charge les tools à la demande : un premier appel peut s'afficher en « Échec » avant que l'outil soit chargé, puis réussir. Si le journal du serveur ne contient aucune requête `tools/call` correspondante, l'échec vient du client, pas du serveur.
 - Variables d'environnement facultatives, à déclarer dans `"env"` : `MAIL_MCP_DEFAULT_ACCOUNT` (compte d'écriture par défaut, nom ou adresse ; `iCloud` si absente) et `MAIL_MCP_HIDE_DRAFTS=1` (brouillons sans fenêtre, déconseillé avec Antidote).
@@ -126,7 +130,12 @@ Le serveur n'est déclaré dans **aucune** configuration de Claude Code. Il l'av
 - Budgets globaux côté Node : 35 s pour la recherche dans sujets et expéditeurs, 15 s pour la recherche dans le contenu. Au-delà, le résultat est partiel et le dit (`search_complete`, `not_searched`).
 - Les durées varient du simple au triple selon l'activité de Mail : ne jamais dimensionner un lot fixe au plus juste.
 
-### 6. Divers
+### 6. Contacts
+- `search_contacts` est le seul tool qui s'adresse à une autre application que Mail. Son script déclare `MAIL_NOT_REQUIRED` : `run()` n'exige alors pas que Mail soit ouvert.
+- Lecture seule : aucun tool ne crée ni ne modifie de fiche.
+- Le script (`list_contacts`) renvoie toutes les fiches ; le filtrage se fait côté Node (`src/contacts.js`), donc sans Contacts dans les tests.
+
+### 7. Divers
 - Journalisation sur **stderr** uniquement : stdout est réservé au protocole MCP.
 - Sortie d'un tool : JSON dans `content[0].text` + `structuredContent`. Erreur : `isError: true` avec `{code, message, details?}`.
 
@@ -148,6 +157,10 @@ Précisions sur la lecture :
 - `list_messages` sans `account` fusionne la même boîte de tous les comptes : utiliser un nom générique. Un compte où la boîte n'existe pas est listé dans `skipped_accounts`.
 - `search_messages` est insensible à la casse et aux accents. Sans `mailbox`, il exclut corbeille, indésirables et « All Mail » de Gmail (qui contient une copie de chaque message) ; les boîtes de réception de tous les comptes sont parcourues en premier.
 - `matched_in` vaut `subject`, `sender` ou `content` ; le contenu n'est parcouru que pour les messages que sujet et expéditeur n'ont pas trouvés, dans la limite de `content_scan_limit` messages et de 15 s.
+
+| `search_contacts` | `query` (≥ 2 car.), `limit=20` (1–100) | `{query, contacts_searched, total_matches, returned, truncated, without_email, contacts:[{name, nickname?, organization?, emails:[{address, label}]}]}`, par ordre alphabétique |
+
+Précisions sur `search_contacts` : tous les mots de `query` doivent se trouver dans le nom, le surnom, l'organisation ou une adresse (insensible à la casse et aux accents). Les fiches sans adresse ne sont pas renvoyées, seulement comptées (`without_email`). `label` vaut `home`, `work`, `other`, un libellé personnalisé ou `null`.
 
 Un argument invalide (type, borne, `account` manquant) est rejeté par le SDK avant d'atteindre le handler, avec un message `Input validation error`. C'est pourquoi `confirm` est déclaré optionnel : le refus vient du handler, avec le code `CONFIRMATION_REQUIRED`.
 
@@ -217,6 +230,16 @@ Mesures faites le 2026-09-29 sur un compte réel (boîte de réception d'environ
 | Créer `Absent/Enfant` avec un parent inexistant : Mail crée `Enfant` sous un parent implicite, qui n'apparaît pas dans `account.mailboxes` | Le parent doit exister (`MAILBOX_NOT_FOUND`) |
 | Supprimer une boîte par script (`Mail.delete(mb)`, `mb.delete()`, AppleScript `delete mailbox`) : erreur -10000 sur iCloud, même vide | Aucun tool de suppression ni de renommage de boîte. Une boîte de test créée par une sonde se supprime **à la main dans Mail** |
 
+### Contacts (sondes du 2026-10-05, carnet d'environ 800 fiches)
+
+| Constat | Conséquence |
+|---|---|
+| Lecture en masse d'une propriété de toutes les fiches (`people.name()`, `people.organization()`…) : ≈ 0,1 s | Toutes les fiches sont lues à chaque appel, sans filtre `whose` |
+| `people.emails.value()` et `people.emails.label()` renvoient en un événement un tableau de tableaux, aligné sur les fiches | Adresses et libellés lus en masse ; contrôle des longueurs et nouvel essai |
+| Contacts fermé : le premier événement le lance en arrière-plan (1 à 5 s), sans le mettre au premier plan ; il reste ouvert ensuite | Lancement accepté, contrairement à Mail. Le script relève `running()` avant la lecture et appelle `quit()` après si c'est lui qui a lancé Contacts ; ouvert par l'utilisateur, Contacts n'est pas refermé (vérifié dans les deux cas, ≈ 1,3 s fermé au départ, ≈ 0,6 s ouvert) |
+| Libellés standard sous la forme `_$!<Home>!$_`, libellés personnalisés en texte libre | `cleanLabel()` |
+| `name` peut être vide (fiche d'organisation) | Repli sur l'organisation |
+
 ### Composition et envoi (sondes du 2026-09-29)
 
 | Piège | Solution retenue |
@@ -249,6 +272,7 @@ Mesures faites le 2026-09-29 sur un compte réel (boîte de réception d'environ
 - **Recherche sans boîte** : toutes les boîtes sauf corbeille et indésirables (choix de l'utilisateur), et sauf « All Mail » de Gmail.
 - **Tous les comptes** (choix de l'utilisateur, 2026-09-29) : la limitation au compte iCloud du cahier des charges initial est levée. `account` est obligatoire pour agir sur un message, facultatif pour lire.
 - **Compte d'écriture par défaut** : `iCloud`, modifiable par `MAIL_MCP_DEFAULT_ACCOUNT`. S'il n'existe pas et qu'un seul compte est activé, c'est celui-là ; sinon `from_account` est exigé.
+- **Contacts par script plutôt que par le framework Contacts** (2026-10-05) : même mécanisme d'autorisation (Automation) et même runner que le reste du serveur. Contacts est lancé au besoin, son démarrage tenant largement dans le timeout, et refermé après la lecture s'il était fermé (demande de l'utilisateur, 2026-10-05).
 - **Mail n'est pas lancé automatiquement** : un lancement à froid dépasse le timeout et déclenche une synchronisation.
 - **Écart par rapport au plan** : `content_scan_limit` vaut 30 par défaut (et non 100) et le parcours du contenu est plafonné à 15 s (25 s avant la version 0.2), car la lecture des corps s'est révélée jusqu'à trois fois plus lente que la première mesure. Une recherche sur tous les comptes reste ainsi sous la minute.
 - **Lecture sans effet de bord** : `read_message` ne marque pas le message comme lu.

@@ -31,7 +31,7 @@ export class MailMcpError extends Error {
 
 export const AUTOMATION_HELP =
   "Autorisation Automation refusée : ouvrez Réglages Système > Confidentialité et sécurité > Automatisation, " +
-  "puis activez « Mail » pour l'application qui lance ce serveur (Terminal, iTerm, Claude, Claude Code…).";
+  "puis activez « Mail » (et « Contacts » pour search_contacts) pour l'application qui lance ce serveur (Terminal, iTerm, Claude, Claude Code…).";
 
 // Numéros d'erreur Apple Event → codes du serveur.
 export function codeFromAppleError(errorNumber, message = '') {

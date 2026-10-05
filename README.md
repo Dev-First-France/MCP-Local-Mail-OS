@@ -3,6 +3,7 @@
 Serveur MCP local qui pilote **Apple Mail** sur macOS pour **Claude Desktop** : tous les comptes activés dans Mail (iCloud, Gmail, Exchange/Outlook, IMAP).
 
 - Lecture, recherche, organisation, pièces jointes, brouillons, transfert.
+- Recherche d'adresses dans l'application Contacts, pour écrire à quelqu'un en le désignant par son nom.
 - **Aucune action irréversible sans confirmation** : l'envoi et la mise à la corbeille exigent `confirm: true`. Rien n'est jamais supprimé définitivement.
 - Tout passe par `osascript` : aucun accès direct aux fichiers de Mail, aucun mot de passe, aucun pilotage de l'interface.
 
@@ -11,7 +12,7 @@ Serveur MCP local qui pilote **Apple Mail** sur macOS pour **Claude Desktop** : 
 - macOS avec Mail configuré sur au moins un compte
 - Node.js 20 ou plus récent
 - Claude Desktop
-- Mail **ouvert** (le serveur ne le lance pas)
+- Mail **ouvert** (le serveur ne le lance pas). Contacts n'a pas besoin de l'être : la recherche de contacts l'ouvre en arrière-plan puis le referme
 
 ## Installation
 
@@ -23,7 +24,7 @@ npm test
 npm run smoke
 ```
 
-`npm run smoke` est en lecture seule : il liste les tools, les comptes, les boîtes et les 5 derniers messages reçus, tous comptes confondus. Au premier lancement, macOS demande d'autoriser le Terminal à contrôler Mail : acceptez, puis relancez la commande si elle a dépassé le délai.
+`npm run smoke` est en lecture seule : il liste les tools, les comptes, les boîtes et les 5 derniers messages reçus, tous comptes confondus, puis compte les fiches de Contacts. Au premier lancement, macOS demande d'autoriser le Terminal à contrôler Mail, puis Contacts : acceptez, puis relancez la commande si elle a dépassé le délai.
 
 ## Configuration dans Claude Desktop
 
@@ -113,14 +114,16 @@ Quittez complètement l'application avec **Cmd+Q**, puis relancez-la. Fermer la 
 ### 5. Vérifier
 
 - **Réglages > Développeur** : le serveur `Mail Mac Os` apparaît dans la liste, avec l'état « en cours d'exécution ».
-- Dans une conversation, le menu des outils et connecteurs liste `Mail Mac Os` et ses 13 tools.
+- Dans une conversation, le menu des outils et connecteurs liste `Mail Mac Os` et ses 15 tools.
 - Essai sans risque : demandez « Liste mes comptes de messagerie ».
 
 ### 6. Autoriser le contrôle de Mail
 
 Au premier appel d'un tool, macOS affiche « Claude souhaite contrôler Mail » : cliquez sur **Autoriser**. Si ce premier appel échoue par dépassement de délai, relancez-le.
 
-En cas de refus par erreur : **Réglages Système > Confidentialité et sécurité > Automatisation**, puis activez **Mail** sous **Claude**.
+La première recherche dans les contacts déclenche la même demande pour **Contacts**.
+
+En cas de refus par erreur : **Réglages Système > Confidentialité et sécurité > Automatisation**, puis activez **Mail** (et **Contacts**) sous **Claude**.
 
 ### Dépannage
 
@@ -158,6 +161,7 @@ claude mcp add --scope user mail -- node /Users/vous/MCP-Local-Mail-OS/index.js
 | `list_messages` | Messages d'une boîte, du plus récent au plus ancien |
 | `search_messages` | Recherche dans le sujet, l'expéditeur et le contenu |
 | `read_message` | En-têtes, corps en texte (20 000 caractères au plus), liste des pièces jointes |
+| `search_contacts` | Cherche une personne dans l'application Contacts et renvoie ses adresses électroniques |
 | `create_mailbox` | Crée une boîte (dossier) dans un compte, à la racine ou sous une boîte existante |
 | `move_message` | Déplace un message vers une boîte existante, du même compte ou d'un autre |
 | `flag_message` | Pose ou retire le drapeau |
@@ -175,6 +179,7 @@ claude mcp add --scope user mail -- node /Users/vous/MCP-Local-Mail-OS/index.js
 - Une **boîte** est désignée par son chemin complet, par exemple `Archives/Clients`, ou par un nom générique valable pour tout compte : `INBOX`, `Drafts`, `Sent`, `Trash`, `Junk`. Le serveur le traduit dans le nom propre au fournisseur (`[Gmail]/Trash`, `Éléments supprimés`, `Deleted Messages`…).
 - Une **nouvelle boîte** se crée avec `create_mailbox` : un nom simple (`Projets`) et, pour une sous-boîte, la boîte parente (`parent: "Archives"`). Le serveur refuse un nom déjà pris et ne supprime ni ne renomme jamais une boîte (Mail ne le permet pas par script).
 - Un **message** est identifié par le triplet `(account, mailbox, id)`. Après un déplacement, son id change : le résultat donne le nouveau.
+- Un **destinataire** peut être désigné par son nom : `search_contacts` cherche dans l'application Contacts (nom, surnom, organisation, adresse, sans tenir compte de la casse ni des accents) et renvoie les adresses de chaque fiche avec leur libellé (`home`, `work`…). S'il y a plusieurs adresses possibles, l'assistant vous les propose. Les fiches sans adresse sont seulement comptées. Le carnet d'adresses n'est jamais modifié.
 - Un **nouveau message** part du compte par défaut, sauf si `from_account` est précisé. Une réponse ou un transfert part du compte qui a reçu le message.
 
 ## L'envoi, pas à pas
@@ -197,6 +202,7 @@ Si vous modifiez le brouillon dans Mail après l'aperçu, `send_email` refuse (`
 5. « Range dans la boîte Newsletter tous les mails de la boîte de réception dont l'expéditeur contient "newsletter", puis mets un drapeau sur le dernier mail de ma banque. »
 7. « Quels comptes de messagerie as-tu à disposition ? Montre-moi les non-lus de chacun. »
 8. « Écris à Paul depuis mon compte professionnel pour confirmer la réunion de lundi, et montre-moi le brouillon. »
+9. « Écris à Arnaud pour décaler notre rendez-vous à vendredi. » L'assistant cherche Arnaud dans vos contacts et vous propose les adresses possibles.
 6. « Mets à la corbeille les trois mails promotionnels que tu viens de lister, après m'avoir montré lesquels. »
 9. « Crée une boîte Fournisseurs sur mon compte iCloud et ranges-y les mails de la boîte de réception qui viennent de mon hébergeur. »
 

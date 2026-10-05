@@ -1,5 +1,5 @@
 // Test de fumée en LECTURE SEULE : lance le serveur, liste les tools, les comptes et les boîtes,
-// puis les derniers messages reçus, tous comptes confondus.
+// les derniers messages reçus, tous comptes confondus, puis compte les fiches de Contacts.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -11,7 +11,7 @@ const transport = new StdioClientTransport({
   args: [path.join(root, 'index.js')],
   stderr: 'ignore',
 });
-const client = new Client({ name: 'mail-mcp-smoke', version: '0.3.0' });
+const client = new Client({ name: 'mail-mcp-smoke', version: '0.4.0' });
 
 let failures = 0;
 
@@ -61,6 +61,11 @@ try {
       const flags = `${m.read ? ' ' : '●'}${m.flagged ? '⚑' : ' '}${m.has_attachments ? '📎' : ' '}`;
       console.log(`  ${flags} ${m.date}  ${m.account.slice(0, 16).padEnd(16)}  ${m.sender.slice(0, 26).padEnd(26)}  ${m.subject.slice(0, 44)}`);
     }
+  }
+
+  const contacts = await call('search_contacts', { query: 'an', limit: 1 });
+  if (contacts) {
+    console.log(`  ${contacts.contacts_searched} fiches dans Contacts, ${contacts.total_matches} avec adresse pour « an »`);
   }
 } catch (error) {
   failures++;

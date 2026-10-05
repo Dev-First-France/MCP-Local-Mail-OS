@@ -280,7 +280,8 @@ function run(argv) {
   try {
     const input = readInput();
     const Mail = Application('Mail');
-    if (!Mail.running()) {
+    // Une opération qui ne touche pas à Mail (Contacts) déclare MAIL_NOT_REQUIRED.
+    if (typeof MAIL_NOT_REQUIRED === 'undefined' && !Mail.running()) {
       fail('MAIL_NOT_RUNNING', 'Mail n\'est pas ouvert. Ouvrez l\'application Mail puis réessayez.');
     }
     return JSON.stringify({ ok: true, data: main(input, Mail) });
